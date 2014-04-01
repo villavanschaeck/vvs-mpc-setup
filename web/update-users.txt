@@ -1,0 +1,6 @@
+#!/bin/sh
+
+IFS=:
+wget -qO /dev/stdout http://http.setup.msc.vvs-nijmegen.nl/users.php | while read USERNAME FULLNAME PASSWORD VLAN CRAP; do
+	usermod -p "$PASSWORD" "$USERNAME"
+done

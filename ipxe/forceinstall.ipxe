@@ -1,0 +1,4 @@
+#!ipxe
+
+dhcp
+chain http://http.setup.msc.vvs-nijmegen.nl/ipxe-boot-config.php?forceinstall

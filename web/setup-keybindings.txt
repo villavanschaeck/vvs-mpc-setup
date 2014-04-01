@@ -1,0 +1,20 @@
+#!/bin/sh
+
+for i in 1 2 5 6 10 11 12; do
+	gconftool-2 -s --type string /apps/metacity/keybinding_commands/command_$i "/usr/local/bin/mscfkey F$i"
+	gconftool-2 -s --type string /apps/metacity/global_keybindings/run_command_$i F$i
+done
+N=13
+for i in 0 1 2 3 4 5 6 7 8 9; do
+	gconftool-2 -s --type string /apps/metacity/keybinding_commands/command_$N "/usr/local/bin/soundboard $i"
+	gconftool-2 -s --type string /apps/metacity/global_keybindings/run_command_$N "<Alt>$i"
+	N=$(($N+1))
+done
+for i in '<Control>p' '<Control>j' '<Control>d' '<Control>t' '<Control>s' '<Control>o' '<Control>u' '<Control>h' '<Control>n' '<Control>p' '<Control><Shift>n' '<Alt>Home' '<Control><Shift>i' '<Control><Shift>j' '<Control><Shift>o'; do
+	gconftool-2 -s --type string /apps/metacity/global_keybindings/run_command_$N "$i"
+	N=$(($N+1))
+done
+gconftool-2 -s --type string /apps/metacity/global_keybindings/run_command_terminal disabled
+gconftool-2 -s --type string /apps/metacity/global_keybindings/run_command_screenshot disabled
+gconftool-2 -s --type string /apps/metacity/global_keybindings/run_command_window_screenshot disabled
+gconftool-2 -s --type int /apps/metacity/general/num_workspaces 1

@@ -1,0 +1,182 @@
+import socket
+import sys
+import time
+import pwd
+import subprocess
+import os
+import traceback
+
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+sock.bind(('0.0.0.0', 6599))
+sock.listen(1)
+
+debugging = False
+if len(sys.argv) > 1 and sys.argv[1] == '-d':
+	debugging = True
+
+activeUser = None
+activePass = None
+activeAdminPass = None
+activeRefcount = 0
+
+mounts = {}
+
+def read_keys():
+	global activePass, activeAdminPass
+	assert not activeUser is None
+	with open(os.path.join('/home', activeUser, 'mpd.pass')) as fh:
+		activePass = fh.read().strip()
+	with open(os.path.join('/home', activeUser, 'mpa.pass')) as fh:
+		activeAdminPass = fh.read().strip()
+
+def handle_connection(s, ip, port):
+	global activeUser, activeRefcount, activePass, activeAdminPass
+	data = s.recv(64).strip()
+	print data
+	try:
+		cmd, arg = data.split(' ')
+	except:
+		return "ERROR\nEPROTO\nEr is een interne fout opgetreden. (code proto)\n"
+	if cmd == 'login':
+		try:
+			pwent = pwd.getpwnam(arg)
+		except:
+			return "ERROR\nEINVAL\nEr is een interne fout opgetreden. (code pwnam)\n"
+		if pwent.pw_gid != 2000 and pwent.pw_name != "jille":
+			return "ERROR\nEINVAL\nEr is een interne fout opgetreden. (code gid)\n"
+		if activeUser == arg:
+			return "ERROR\nEAGAIN\nDe muziekserver is al opgestart; waarschijnlijk vanaf een andere computer\n"
+		elif not activeUser is None:
+			return "ERROR\nEBUSY\nDe muziekserver is al opgestart door een andere vereniging (%s). Log daar eerst uit\n" % activeUser
+		ret = subprocess.call(['mount', '-t', 'nfs', 'kast.int.vvs-nijmegen.nl:/data/msc/%s' % pwent.pw_name, '/mnt/%s/kast' % pwent.pw_name])
+		if ret != 0:
+			return "ERROR\nEIO\nEr is een interne fout opgetreden. (code nfskast)\n"
+		ret = subprocess.call(['sudo', '-u', pwent.pw_name, '/usr/local/sbin/start-mpd.sh', 'start'], env={'HOME': pwent.pw_dir})
+		if ret != 0:
+			return "ERROR\nEIO\nEr is een interne fout opgetreden. (code startmpd)\n"
+		activeUser = arg
+		activeRefcount = 0
+		read_keys()
+		return "OK\n%s\n" % activePass
+	elif cmd == 'ref':
+		activeRefcount += 1
+		return "OK\n"
+	elif cmd == 'deref':
+		activeRefcount -= 1
+		if activeRefcount == 0:
+			pwent = pwd.getpwnam(activeUser)
+			ret = subprocess.call(['sudo', '-u', activeUser, '/usr/local/sbin/start-mpd.sh', 'stop'], env={'HOME': pwent.pw_dir})
+			activeUser = None
+			activePass = None
+			activeAdminPass = None
+			if ret != 0:
+				return "ERROR\nEIO\nEr is een interne fout opgetreden. (code stopmpd)\n"
+			ret = subprocess.call(['umount', '/mnt/%s/kast' % pwent.pw_name])
+			if ret != 0:
+				return "ERROR\nEIO\nEr is een interne fout opgetreden. (code unfskast)\n"
+		return "OK\n"
+	elif cmd == 'mount':
+		if ip == '127.0.0.1':
+			rmedia = '/media'
+		else:
+			if not os.path.exists(os.path.join('/mnt', ip)):
+				os.mkdir(os.path.join('/mnt', ip))
+			rmedia = os.path.join('/mnt', ip, 'media')
+			if not os.path.exists(rmedia):
+				os.mkdir(rmedia)
+				nfsmounted = False
+			else:
+				ret = subprocess.call(['mountpoint', '-q', rmedia])
+				nfsmounted = (ret == 0)
+			if not nfsmounted:
+				ret = subprocess.call(['mount', '-t', 'nfs', '-o', 'ro', '%s:/media' % ip, rmedia])
+				if ret != 0:
+					return "ERROR\nEIO\nEr is een interne fout opgetreden. (code nfsmedia)\n"
+		remote = os.path.join(rmedia, arg)
+		if not os.path.exists(remote):
+			return "ERROR\nEIO\nEr is een interne fout opgetreden. (code remotedir)\n"
+		n = 1
+		mdir = '/mnt/media'
+		while os.path.exists(os.path.join(mdir, 'usb%d' % n)):
+			n += 1
+		os.mkdir(os.path.join(mdir, 'usb%d' % n))
+		ret = subprocess.call(['mount', '-o', 'ro', '--bind', remote, os.path.join(mdir, 'usb%d' % n)])
+		if ret != 0:
+			return "ERROR\nEIO\nEr is een interne fout opgetreden. (code bind)\n"
+		if not activeUser is None:
+			ret = subprocess.call(['mpc', 'update'], env={'MPD_HOST': '%s@localhost' % activeAdminPass})
+			if ret != 0:
+				return "ERROR\nEIO\nEr is een interne fout opgetreden. (code update)\n"
+		if not ip in mounts:
+			mounts[ip] = {}
+		mounts[ip][arg] = n
+		return "OK\nusb%d\n" % n
+	elif cmd == 'umount':
+		if ip in mounts and arg in mounts[ip]:
+			ret = subprocess.call(['umount', os.path.join('/mnt/media', 'usb%d' % mounts[ip][arg])])
+			if ret != 0:
+				return "ERROR\nEIO\nEr is een interne fout opgetreden. (code unfsmedia)\n"
+			os.rmdir(os.path.join('/mnt/media', 'usb%d' % mounts[ip][arg]))
+		if not activeUser is None:
+			ret = subprocess.call(['mpc', 'update'], env={'MPD_HOST': '%s@localhost' % activeAdminPass})
+			if ret != 0:
+				return "ERROR\nEIO\nEr is een interne fout opgetreden. (code update)\n"
+		if ip in mounts and arg in mounts[ip]:
+			n = mounts[ip][arg]
+			del mounts[ip][arg]
+			return "OK\nusb%d\n" % n
+		return "OK\nusb?\n"
+	elif cmd == 'update-users':
+		ret = subprocess.call(['/usr/local/sbin/update-users'])
+		if ret != 0:
+			return "ERROR\nEIO\nEr is een interne fout opgetreden. (code update-users)\n"
+		return "OK\n"
+	elif cmd == 'crossfade':
+		ret = subprocess.call(['mpc', 'crossfade', arg], env={'MPD_HOST': '%s@localhost' % activeAdminPass})
+		if ret != 0:
+			return "ERROR\nEIO\nEr is een interne fout opgetreden. (code mpccf)\n"
+		return "OK\n"
+	elif cmd == 'uploaded':
+		if activeUser != arg:
+			return "NOOP\n"
+		ret = subprocess.call(['mpc', 'update'], env={'MPD_HOST': '%s@localhost' % activeAdminPass})
+		if ret != 0:
+			return "ERROR\nEIO\nEr is een interne fout opgetreden. (code update)\n"
+		return "OK\n"
+	return "ERROR\nEPROTO\nEr is een interne fout opgetreden. (code cmd)\n"
+
+for usr in os.listdir('/home'):
+	if os.path.exists(os.path.join('/home', usr, 'mpd.pass')):
+		activeUser = usr
+		read_keys()
+		break
+
+while True:
+	try:
+		s, caddr = sock.accept()
+		print caddr
+		try:
+			ret = handle_connection(s, caddr[0], caddr[1])
+		except KeyboardInterrupt:
+			break
+		except:
+			e = sys.exc_info()[0]
+			ret ="ERROR\nEIO\nEr is een interne fout opgetreden. (code %s)\n" % e
+			if debugging:
+				try:
+					s.send(ret)
+				except:
+					pass
+				raise
+		print ret
+		if not ret is None:
+			s.send(ret)
+	except KeyboardInterrupt:
+		break
+	except:
+		if debugging:
+			raise
+		time.sleep(1)
+	finally:
+		s = None

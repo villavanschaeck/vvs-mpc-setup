@@ -1,0 +1,81 @@
+#!/bin/sh
+
+# TODO integrate in manager.py?
+
+generate_password() {
+	(
+		echo 'import random'
+		echo 'print "%05d" % (random.random() * 100000)'
+	) | python
+}
+
+set -e
+
+MUSIC_DIR=/mnt/$USER/virtual
+DB_FILE=$HOME/db.dat
+STICKER_FILE=$HOME/sticker.dat
+
+case "$1" in
+	start)
+		mhddfs /mnt/$USER/kast/music,/mnt/media $MUSIC_DIR
+
+		umask 0077
+
+		PASS=`generate_password`
+		echo $PASS
+		ADMINPASS=`generate_password`
+
+		if [ -f /mnt/$USER/kast/mpd/db.dat ]; then
+			cp /mnt/$USER/kast/mpd/db.dat $DB_FILE
+		fi
+		if [ -f /mnt/$USER/kast/mpd/sticker.dat ]; then
+			cp /mnt/$USER/kast/mpd/sticker.dat $STICKER_FILE
+		fi
+
+		touch $HOME/mpd.pass $HOME/.mpdconf $HOME/mpa.pass
+		chmod 600 $HOME/mpd.pass $HOME/.mpdconf $HOME/mpa.pass
+
+		echo "$PASS" > $HOME/mpd.pass
+		echo "$ADMINPASS" > $HOME/mpa.pass
+
+		cat <<EOF > $HOME/.mpdconf
+follow_outside_symlinks "no"
+follow_inside_symlinks "no"
+db_file "$DB_FILE"
+sticker_file "$STICKER_FILE"
+log_file "syslog"
+pid_file "$HOME/mpd.pid"
+music_directory "$MUSIC_DIR"
+playlist_directory "/mnt/$USER/kast/mpd/playlists"
+zeroconf_enabled "no"
+password "$PASS@read,add,control"
+password "$ADMINPASS@read,add,control,admin"
+default_permissions ""
+replaygain "track"
+volume_normalization "yes"
+# audio_buffer_size "10240"
+# buffer_before_play "25%"
+max_connections "10"
+gapless_mp3_playback "yes"
+auto_update "no"
+bind_to_address "0.0.0.0"
+
+audio_output {
+	type "alsa"
+	name "ALSA"
+}
+EOF
+
+		mpd
+		sleep 0.5
+		mpc -qh $ADMINPASS@localhost consume on
+		mpc -qh $ADMINPASS@localhost update
+		;;
+	stop)
+		mpd --kill
+		rm -f $HOME/mpd.pass $HOME/mpa.pass $HOME/mpd.pid
+		mv $DB_FILE /mnt/$USER/kast/mpd/db.dat
+		mv $STICKER_FILE /mnt/$USER/kast/mpd/sticker.dat
+		fusermount -u /mnt/$USER/virtual
+		;;
+esac

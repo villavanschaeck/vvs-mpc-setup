@@ -1,0 +1,16 @@
+#!/bin/sh
+
+if [ ! -f "$HOME/mpc.pass" ]; then
+	exit 0
+fi
+
+if [ "$1" = "0" ]; then
+	killall mpg321
+	exit 0
+fi
+
+FN="/mnt/$USER/virtual/soundboard/$1.mp3"
+
+if [ -f "$FN" ]; then
+	mpg321 "$FN"
+fi

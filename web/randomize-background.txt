@@ -1,0 +1,8 @@
+#!/bin/bash
+
+rm -f /usr/share/backgrounds/warty-final-ubuntu.png
+OPTS=`ls /usr/share/backgrounds | wc -l`
+OPT=$(($RANDOM % $OPTS+1))
+NEW=`ls /usr/share/backgrounds | head -n +$OPT | tail -1`
+# This filename seemed to be hardcoded somewhere
+ln -s /usr/share/backgrounds/$NEW /usr/share/backgrounds/warty-final-ubuntu.png

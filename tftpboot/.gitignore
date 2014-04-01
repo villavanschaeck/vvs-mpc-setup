@@ -1,0 +1,6 @@
+mscboot.kpxe
+netboot.tar.gz
+pxelinux.0
+pxelinux.cfg
+ubuntu-installer
+version.info

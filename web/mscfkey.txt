@@ -1,0 +1,50 @@
+#!/bin/sh
+
+if [ ! -f "$HOME/mpc.pass" ]; then
+	case "$1" in
+		F1|F2|F5|F6|F8|F9|F10|F11) exit 0; ;;
+	esac
+fi
+
+PASS=`cat $HOME/mpc.pass`
+export MPD_HOST=$PASS@MASTER_ADDR
+
+case "$1" in
+	F1)
+		mpc toggle
+		;;
+	F2)
+		mpc next
+		;;
+	F5)
+		mpc volume -4
+		;;
+	F6)
+		mpc volume +4
+		;;
+	F8)
+		if [ "`mpc crossfade`" = "crossfade: 0" ]; then
+			echo "crossfade 5" | nc MASTER_ADDR 6599
+		else
+			echo "crossfade 0" | nc MASTER_ADDR 6599
+		fi
+		;;
+	F9)
+		mpc listall | /usr/local/bin/pick.py 5 | mpc add
+		;;
+	F10)
+		mpc shuffle
+		;;
+	F11)
+		zenity --info --text="De code is $PASS"
+		;;
+	F12)
+		if [ -f "$HOME/.F12-pressed" ]; then
+			killall chromium-browser
+		else
+			touch $HOME/.F12-pressed
+			(zenity --warning --text="Press F12 again to log out"; rm -f "$HOME/.F12-pressed") &
+			(sleep 5; killall zenity; rm -f $HOME/.F12-pressed) &
+		fi
+	;;
+esac

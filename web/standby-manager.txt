@@ -1,0 +1,19 @@
+#!/bin/sh
+
+export DISPLAY=:0
+IDLE_TIME=0
+while :; do
+	# xset q off
+	xset -dpms
+	sleep 300
+	if [ "`w | wc -l`" = "2" ]; then
+		IDLE_TIME=$(($IDLE_TIME+1))
+		if [ "$IDLE_TIME" = "12" ]; then
+			IDLE_TIME=0
+			s2both
+			/usr/local/sbin/update-users
+		fi
+	else
+		IDLE_TIME=0
+	fi
+done

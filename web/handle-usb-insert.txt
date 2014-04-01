@@ -1,0 +1,26 @@
+#!/bin/sh
+
+case "$ACTION" in
+	add)
+		N=1
+		while [ -e "/media/usb$N" ]; do
+			N=$(($N+1))
+		done
+		mkdir /media/usb$N
+		mount -o ro "$DEVNAME" /media/usb$N
+		(echo "mount usb$N" | nc MASTER_ADDR 6599) &
+		;;
+	remove)
+		while read DEV MNTPT CRAP; do
+			if [ "$DEV" = "$DEVNAME" ]; then
+				echo "umount ${MNTPT#/media/}" | nc MASTER_ADDR 6599
+				umount "$MNTPT"
+				rmdir "$MNTPT"
+				break
+			fi
+		done < /proc/mounts
+		;;
+	*)
+		echo "$0: Unknown action '$ACTION'" >&2
+		exit 1
+esac

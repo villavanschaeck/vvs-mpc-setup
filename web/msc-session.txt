@@ -1,0 +1,56 @@
+#!/bin/sh
+
+TMPF="`tempfile`"
+STATE="ERROR"
+ERRCODE="ENODATA"
+ERRMSG="Er is een interne fout opgetreden. (code nc)"
+
+metacity &
+(
+	echo 0
+	if ! nc -z MASTER_ADDR 6599; then
+		wget -O /dev/null -q http://http.setup.msc.vvs-nijmegen.nl/wake-master.php
+		sleep 5
+	fi
+	echo "login $USER" | nc MASTER_ADDR 6599 | (
+		read STATE
+		echo "STATE='$STATE'" > $TMPF
+		if [ "$STATE" = "OK" ]; then
+			read PASS
+			echo "PASS='$PASS'" >> $TMPF
+		elif [ "$STATE" = "ERROR" ]; then
+			read ERRCODE
+			echo "ERRCODE='$ERRCODE'" >> $TMPF
+			read ERRMSG
+			echo "ERRMSG='$ERRMSG'" >> $TMPF
+		fi
+	)
+	echo 100
+) | zenity --progress --auto-close --pulsate --title="Muzieksysteem" --text="Bezig met opstarten muziekserver..."
+. $TMPF
+rm -f $TMPF
+if [ "$ERRCODE" = "EAGAIN" ]; then
+	PASS="`zenity --entry --title="Muzieksysteem" --text='Vul de code in. Deze kun je krijgen door op de andere computer op F11 te drukken.'`"
+	if mpc -h "$PASS@MASTER_ADDR" >/dev/null 2>&1; then
+		STATE="OK"
+	else
+		ERRMSG="Ongeldige code"
+	fi
+fi
+if [ "$STATE" != "OK" ]; then
+	exec zenity --error --title="Muzieksysteem" --text="$ERRMSG"
+fi
+touch ~/mpc.pass
+chmod 600 ~/mpc.pass
+echo "$PASS" > ~/mpc.pass
+URL="http://vvsmpc.int.vvs-nijmegen.nl/?server=MASTER_IP&pass=$PASS"
+echo "ref $USER" | nc MASTER_ADDR 6599
+while :; do
+	chromium-browser --disable-extensions --disable-restore-session-state --disable-sync --disable-translate --no-first-run --incognito --kiosk $URL
+	if [ -f ~/.F12-pressed ]; then
+		break
+	fi
+	sleep 1
+done
+echo "deref $USER" | nc MASTER_ADDR 6599
+rm -f ~/mpc.pass

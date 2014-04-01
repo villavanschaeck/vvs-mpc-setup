@@ -1,0 +1,7 @@
+#!/bin/sh
+
+set -e
+sh /etc/gdm/Init/Original "$@"
+xset s off
+xset -dpms
+unclutter -idle 1 -root &

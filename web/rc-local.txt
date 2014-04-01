@@ -1,0 +1,25 @@
+#!/bin/sh
+
+# TODO: start-stop-daemon gebruiken?
+
+mkdir /tmp/homes/
+for i in `ls /usr/basehomes`; do
+	mkdir /tmp/homes/$i
+	chown $i:verenigingen /tmp/homes/$i
+	unionfs-fuse -o cow,statfs_omit_ro,allow_other,nonempty,uid=`id -u $i`,gid=`id -g $i` /tmp/homes/$i=RW:/usr/basehomes/$i=RO /home/$i
+done
+
+rm -f /home/*/mpd.pid /home/*/mpd.pass /home/*/mpa.pass
+rm -rf /media/* /mnt/media/*
+
+amixer set Master 90%
+amixer set PCM 90%
+# Interne speaker van de Dell OptiPlex SX280's
+amixer set 'Master Mono' 0% 2>/dev/null || true
+
+/usr/local/sbin/update-users &
+wget -qO /dev/null http://http.setup.msc.vvs-nijmegen.nl/host-boot.php
+
+/usr/local/sbin/standby-manager &
+
+python /usr/local/sbin/manager.py </dev/null 2>&1 | logger -t manager &

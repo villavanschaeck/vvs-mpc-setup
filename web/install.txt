@@ -1,0 +1,177 @@
+#!/bin/sh
+
+## Download the configuration for this host
+wget -O /tmp/config.sh http://http.setup.msc.vvs-nijmegen.nl/config.php
+. /tmp/config.sh
+
+if [ -z "$MASTER" ]; then
+	MASTER_ADDR=localhost
+	MASTER_IP=$IP
+else
+	MASTER_ADDR=$MASTER
+	MASTER_IP=$MASTER
+fi
+
+## Configure basics
+echo "$HOSTNAME" > /etc/hostname
+grep -v 127.0.1.1 /etc/hosts > /etc/hosts.new
+echo "$IP      $HOSTNAME.$DOMAIN $HOSTNAME" >> /etc/hosts.new
+mv /etc/hosts.new /etc/hosts
+sed -i 's/FSCKFIX=no/FSCKFIX=yes/g' /etc/default/rcS
+wget -O /etc/default/ntpdate http://http.setup.msc.vvs-nijmegen.nl/ntpdate.txt
+
+## Set up security
+# Add some users
+adduser --uid 990 --gid 100 --shell /bin/bash --gecos "Jille Timmermans,,," --disabled-password jille
+usermod -p "$USER_JILLE_PASSWORD" jille
+gpasswd sudo -a jille
+
+adduser --uid 991 --gid 100 --shell /bin/bash --gecos "Felix Janssen,,," --disabled-password felix
+usermod -p "$USER_FELIX_PASSWORD" felix
+gpasswd sudo -a felix
+
+adduser --uid 992 --gid 100 --shell /bin/bash --gecos "Daan Sprenkels,,," --disabled-password daan
+usermod -p "$USER_DAAN_PASSWORD" daan
+gpasswd sudo -a daan
+
+sed -i 's/PermitRootLogin yes/PermitRootLogin no/g' /etc/ssh/sshd_config
+# Create vereniging and deny them to login with ssh or from the console
+addgroup --gid 2000 verenigingen
+echo "DenyGroups verenigingen" >> /etc/ssh/sshd_config
+cat <<EOF >> /etc/security/access.conf
+- : verenigingen : tty1 tty2 tty3 tty4 tty5 tty6
+EOF
+sed -Ei 's/# account +required +pam_access.so/account required pam_access.so/g' /etc/pam.d/login
+
+# Set and require the rootpassword for sudo
+usermod -p "$USER_ROOT_PASSWORD" root
+echo "Defaults rootpw" > /etc/sudoers.d/rootpw
+chmod 440 /etc/sudoers.d/rootpw
+
+# Deny all users to edit their crontabs
+echo "root" > /etc/cron.allow
+# and to use at(1)
+echo "root" > /etc/at.allow
+
+## Set up grub
+sed -i 's/#GRUB_DISABLE_RECOVERY="true"/GRUB_DISABLE_RECOVERY="true"/g' /etc/default/grub
+wget -O /etc/grub.d/01_auth http://http.setup.msc.vvs-nijmegen.nl/grub-auth.txt
+wget -O /etc/grub.d/50_ipxe http://http.setup.msc.vvs-nijmegen.nl/ipxe-grub.txt
+wget -O /boot/mscboot.lkrn http://http.setup.msc.vvs-nijmegen.nl/mscboot.lkrn
+chmod 555 /etc/grub.d/01_auth /etc/grub.d/50_ipxe
+
+## Set up apt
+sed -i 's/http.setup.msc.vvs-nijmegen.nl/apt-mirror.msc.vvs-nijmegen.nl/g' /etc/apt/sources.list
+apt-get update -q
+PACKAGES="chromium-browser xinit gconf2 unclutter alsa-utils mpc nfs-common unionfs-fuse uswsusp sshfs"
+PACKAGES_WITHOUT_RECOMMENDS="gdm metacity gnome-power-manager mpg321"
+
+if [ -z "$MASTER" ]; then
+	PACKAGES_WITHOUT_RECOMMENDS="mpd mhddfs $PACKAGES_WITHOUT_RECOMMENDS"
+else
+	PACKAGES="nfs-kernel-server $PACKAGES"
+fi
+
+apt-get install -qy --no-install-recommends $PACKAGES_WITHOUT_RECOMMENDS
+apt-get install -qy $PACKAGES
+
+update-rc.d mpd disable
+
+## Set up nfs
+mkdir /mnt/media
+sed -i 's/# Domain = localdomain/Domain = vvs-nijmegen.nl/g' /etc/idmapd.conf
+if [ -n "$MASTER" ]; then
+	echo "/media	$MASTER(ro,async,crossmnt,no_subtree_check,all_squash,anonuid=0,anongid=0)" >> /etc/exports
+fi
+
+## Set up common scripts
+wget -O /etc/rc.local http://http.setup.msc.vvs-nijmegen.nl/rc-local.txt
+wget -O /usr/local/sbin/update-users http://http.setup.msc.vvs-nijmegen.nl/update-users.txt
+wget -O /usr/local/sbin/standby-manager http://http.setup.msc.vvs-nijmegen.nl/standby-manager.txt
+chmod 544 /etc/rc.local /usr/local/sbin/update-users /usr/local/sbin/standby-manager
+
+## Set up the manager on the master
+if [ -z "$MASTER" ]; then
+	wget -O /usr/local/sbin/manager.py http://http.setup.msc.vvs-nijmegen.nl/manager.txt
+	wget -O /usr/local/sbin/start-mpd.sh http://http.setup.msc.vvs-nijmegen.nl/start-mpd.txt
+	chmod 544 /usr/local/sbin/manager.py
+	chgrp verenigingen /usr/local/sbin/start-mpd.sh
+	chmod 554 /usr/local/sbin/start-mpd.sh
+fi
+
+## Set up scripts for a session
+wget -O /usr/local/bin/msc-session http://http.setup.msc.vvs-nijmegen.nl/msc-session.txt
+wget -O /usr/local/bin/mscfkey http://http.setup.msc.vvs-nijmegen.nl/mscfkey.txt
+wget -O /usr/local/bin/soundboard http://http.setup.msc.vvs-nijmegen.nl/soundboard.txt
+wget -O /usr/local/bin/pick.py http://http.setup.msc.vvs-nijmegen.nl/pick.py.txt
+sed -i "s/MASTER_ADDR/$MASTER_ADDR/g" /usr/local/bin/mscfkey
+sed -i -e "s/MASTER_ADDR/$MASTER_ADDR/g" -e "s/MASTER_IP/$MASTER_IP/g" /usr/local/bin/msc-session
+chgrp verenigingen /usr/local/bin/msc-session /usr/local/bin/mscfkey /usr/local/bin/soundboard
+chmod 454 /usr/local/bin/msc-session /usr/local/bin/mscfkey /usr/local/bin/soundboard
+chmod 555 /usr/local/bin/pick.py
+
+## Set up backgrounds
+mkdir /usr/share/backgrounds
+wget -O /usr/local/sbin/randomize-background http://http.setup.msc.vvs-nijmegen.nl/randomize-background.txt
+wget -O /usr/share/backgrounds/bg-vvs.png http://http.setup.msc.vvs-nijmegen.nl/backgrounds/bg-vvs.png
+wget -O /usr/share/backgrounds/bg-tc.png http://http.setup.msc.vvs-nijmegen.nl/backgrounds/bg-tc.png
+chmod 544 /usr/local/sbin/randomize-background
+cat <<EOF >> /etc/crontab
+*/5 * * * *	root	/usr/local/sbin/randomize-background
+EOF
+/usr/local/sbin/randomize-background
+
+## Handle usb-sticks
+wget -O /usr/local/sbin/handle-usb-insert http://http.setup.msc.vvs-nijmegen.nl/handle-usb-insert.txt
+sed -i "s/MASTER_ADDR/$MASTER_ADDR/g" /usr/local/sbin/handle-usb-insert
+chmod 544 /usr/local/sbin/handle-usb-insert
+cat <<EOF > /etc/udev/rules.d/99-vvsmsc.rules
+SUBSYSTEMS=="usb", KERNEL=="sd?[1-9]", RUN="/usr/local/sbin/handle-usb-insert"
+EOF
+
+## Set up gdm
+if [ ! -f /etc/gdm/Init/Original ]; then
+	mv /etc/gdm/Init/Default /etc/gdm/Init/Original
+	wget -O /etc/gdm/Init/Default http://http.setup.msc.vvs-nijmegen.nl/gdm-init.txt
+	chmod 755 /etc/gdm/Init/Default
+fi
+
+# Use msc-session as xsession
+cat <<EOF > /etc/skel/.xsession
+#!/bin/sh
+
+exec /usr/local/bin/msc-session
+EOF
+
+## Set up verenigingen
+mkdir /usr/basehomes
+chown root:verenigingen /usr/basehomes
+chmod 700 /usr/basehomes
+
+wget -O /tmp/setup-keybindings.sh http://http.setup.msc.vvs-nijmegen.nl/setup-keybindings.txt
+
+IFS=:
+wget -qO /dev/stdout http://http.setup.msc.vvs-nijmegen.nl/users.php | while read USERNAME FULLNAME PASSWORD VLAN CRAP; do
+	adduser --shell /bin/bash --uid $((2000+$VLAN)) --gid 2000 --gecos "$FULLNAME,,," --disabled-password $USERNAME
+	usermod -p "$PASSWORD" "$USERNAME"
+
+	mkdir /mnt/$USERNAME
+	mkdir /mnt/$USERNAME/virtual
+	mkdir /mnt/$USERNAME/kast
+	chown -R $USERNAME:fuse /mnt/$USERNAME
+	gpasswd fuse -a $USERNAME
+	gpasswd audio -a $USERNAME
+	wget -O /home/$USERNAME/.face "http://http.setup.msc.vvs-nijmegen.nl/logos/$USERNAME.png"
+
+	sudo -u $USERNAME sh /tmp/setup-keybindings.sh
+
+	mv /home/$USERNAME /usr/basehomes/$USERNAME
+	mkdir /home/$USERNAME
+	chown $USERNAME:verenigingen /home/$USERNAME
+done
+
+## Do a final update of grub with all our changes
+update-grub
+
+## Notify the server we're done
+wget -O /dev/null "http://http.setup.msc.vvs-nijmegen.nl/setup-complete.php?host=$HOSTNAME"
