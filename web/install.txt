@@ -21,6 +21,8 @@ sed -i 's/FSCKFIX=no/FSCKFIX=yes/g' /etc/default/rcS
 wget -O /etc/default/ntpdate http://http.setup.msc.vvs-nijmegen.nl/ntpdate.txt
 
 ## Set up security
+# Remove the intial user; the "Initial user" from ks.cfg doesn't seem to work reliably
+deluser --remove-home jille || true
 # Add some users
 adduser --uid 990 --gid 100 --shell /bin/bash --gecos "Jille Timmermans,,," --disabled-password jille
 usermod -p "$USER_JILLE_PASSWORD" jille
