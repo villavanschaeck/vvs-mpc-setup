@@ -56,7 +56,7 @@ echo "root" > /etc/at.allow
 ## Set up grub
 sed -i 's/#GRUB_DISABLE_RECOVERY="true"/GRUB_DISABLE_RECOVERY="true"/g' /etc/default/grub
 wget -O /etc/grub.d/01_auth http://http.setup.msc.vvs-nijmegen.nl/grub-auth.txt
-wget -O /etc/grub.d/50_ipxe http://http.setup.msc.vvs-nijmegen.nl/ipxe-grub.txt
+wget -O /etc/grub.d/50_ipxe http://http.setup.msc.vvs-nijmegen.nl/grub-ipxe.txt
 wget -O /boot/mscboot.lkrn http://http.setup.msc.vvs-nijmegen.nl/mscboot.lkrn
 chmod 555 /etc/grub.d/01_auth /etc/grub.d/50_ipxe
 
