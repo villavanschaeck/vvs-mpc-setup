@@ -63,6 +63,7 @@ bind_to_address "0.0.0.0"
 audio_output {
 	type "alsa"
 	name "ALSA"
+	mixer_control "Master"
 }
 EOF
 

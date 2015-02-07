@@ -12,8 +12,8 @@ done
 rm -f /home/*/mpd.pid /home/*/mpd.pass /home/*/mpa.pass
 rm -rf /media/* /mnt/media/*
 
-amixer set Master 90%
-amixer set PCM 90%
+amixer set Master -12dB
+amixer set PCM 0dB
 # Interne speaker van de Dell OptiPlex SX280's
 amixer set 'Master Mono' 0% 2>/dev/null || true
 
