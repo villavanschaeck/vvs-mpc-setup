@@ -19,6 +19,8 @@ echo "$IP      $HOSTNAME.$DOMAIN $HOSTNAME" >> /etc/hosts.new
 mv /etc/hosts.new /etc/hosts
 sed -i 's/FSCKFIX=no/FSCKFIX=yes/g' /etc/default/rcS
 wget -O /etc/default/ntpdate http://http.setup.msc.vvs-nijmegen.nl/ntpdate.txt
+echo "# Send everything to deur." > /etc/rsyslog.d/75-deur.conf
+echo "*.* @10.62.62.1:514" >> /etc/rsyslog.d/75-deur.conf
 
 ## Set up security
 # Remove the intial user; the "Initial user" from ks.cfg doesn't seem to work reliably
